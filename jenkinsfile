@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+    environment {
+        BACKEND_ACCESS_KEY = "${STACK}/terraform/backend"
+        BACKEND_blob_container = "${ENVIRONMENT}.tfvars"
+        VAR_FILE_NAME = "${STACK}-${ENVIRONMENT}.tfvars"
+    }
+    stages {
+        stage('Checkout repository') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Runs <terraform init>') {
+            steps {
+                sh '''
+                    
+                    terraform init -backend=false -input=false ./
+                   '''
+            }
+        }
+        stage('Runs <terraform plan>') {
+            steps {
+               script {
+                  
+
+				   def plan = 'terraform plan -out=tfplan -input=false -var-file="./tfvars/${VAR_FILE_NAME}"'
+                    if ("$TF_DESTROY" == "true") {
+                        plan = plan + ' -destroy'
+                    }
+                    plan = plan + ' ./'
+
+                    def planExitCode = sh(script: plan, returnStatus: true)
+
+                    if (planExitCode == 1) {
+                        error 'Error executing Terraform plan.'
+                    }
+                   
+                  }
+				}
+        }
+        stage('Asks approval for <terraform apply>') {
+            steps {
+                script {
+                    def userInput = input(id: 'confirm', message: 'Apply Terraform?', parameters: [ [$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Apply terraform', name: 'confirm'] ])
+                }
+            }
+        }
+        stage('Runs <terraform apply>') {
+            steps {
+
+                    sh '''
+                        
+                        terraform apply -lock=false -input=false tfplan
+                       '''
+                
+            }
+        }
+    }
+}
